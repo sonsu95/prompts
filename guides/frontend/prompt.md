@@ -429,101 +429,204 @@ function useForm<T>(config: FormFieldConfig<T>, initialValues: T) {
 
 ## State Management Architecture
 
-### State Management Decision Matrix
+### State Management Decision Guide
 
 <state_strategy>
-Choose the appropriate state management solution based on these criteria:
+Follow a progressive approach to state management based on actual needs:
 
-| Criteria | Local State | Context | Zustand | React Query | Redux |
-|----------|------------|---------|---------|-------------|--------|
-| Scope | Single component | Component tree | Global | Server state | Complex global |
-| Complexity | Simple | Moderate | Moderate | N/A | High |
-| Dev Experience | Excellent | Good | Excellent | Excellent | Moderate |
-| Performance | Excellent | Good* | Excellent | Excellent | Good |
-| Time Travel | No | No | Via middleware | No | Yes |
-| DevTools | React DevTools | React DevTools | Custom | Excellent | Excellent |
+| State Type | Primary Solution | When to Use | Upgrade When |
+|----------|-----------------|-------------|--------------|
+| Component State | useState, useReducer | Single component needs | Multiple components need access |
+| Shared State | Context API | 2-5 components in same tree | Performance issues or complex logic |
+| Server State | React Query/SWR | Any API data | Always use for server data |
+| Complex Client State | Zustand (if needed) | Context becomes unwieldy | - |
 
-*Context performance depends on proper optimization
+**Key Principle**: Start simple and upgrade only when you encounter real problems.
 </state_strategy>
+
+### When to Consider Upgrading from Context API
+
+<complexity_checklist>
+Consider Zustand when you have 3+ of these issues:
+
+- [ ] More than 5 Context Providers
+- [ ] Single Context with 5+ independent values  
+- [ ] State updates more than 10 times per second
+- [ ] 10+ components subscribing to same Context
+- [ ] useReducer with 15+ action types
+- [ ] Difficulty tracking state changes
+- [ ] Performance warnings in React Profiler
+- [ ] Need for selective subscriptions
+</complexity_checklist>
 
 <examples>
 <example>
-<situation>Implementing multi-source state management</situation>
+<situation>Progressive state management approach</situation>
 <recommended>
 ```typescript
-// 1. Server state with React Query
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      cacheTime: 10 * 60 * 1000, // 10 minutes
-      retry: (failureCount, error) => {
-        if (error.status === 404) return false;
-        return failureCount < 3;
-      },
-      refetchOnWindowFocus: false,
-    },
-  },
+// 1. Start with local state
+const [isOpen, setIsOpen] = useState(false);
+
+// 2. Server state always uses React Query/SWR
+const { data: user } = useQuery({
+  queryKey: ['user', userId],
+  queryFn: () => fetchUser(userId),
+  staleTime: 5 * 60 * 1000,
 });
 
-// 2. Global UI state with Zustand
-interface UIStore {
-  theme: 'light' | 'dark' | 'system';
-  sidebarOpen: boolean;
-  notifications: Notification[];
-  setTheme: (theme: UIStore['theme']) => void;
-  toggleSidebar: () => void;
-  addNotification: (notification: Notification) => void;
-  removeNotification: (id: string) => void;
+// 3. Share state with Context when needed
+interface ThemeContextType {
+  theme: 'light' | 'dark';
+  setTheme: (theme: 'light' | 'dark') => void;
 }
 
-const useUIStore = create<UIStore>((set) => ({
-  theme: 'system',
-  sidebarOpen: true,
-  notifications: [],
-  setTheme: (theme) => set({ theme }),
-  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
-  addNotification: (notification) => 
-    set((state) => ({ 
-      notifications: [...state.notifications, { ...notification, id: nanoid() }] 
-    })),
-  removeNotification: (id) =>
-    set((state) => ({ 
-      notifications: state.notifications.filter(n => n.id !== id) 
-    })),
+const ThemeContext = createContext<ThemeContextType | null>(null);
+
+export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  
+  // Optimize Context to prevent unnecessary re-renders
+  const value = useMemo(
+    () => ({ theme, setTheme }),
+    [theme]
+  );
+  
+  return (
+    <ThemeContext.Provider value={value}>
+      {children}
+    </ThemeContext.Provider>
+  );
+};
+
+// 4. When Context becomes complex, consider Zustand
+// Example: Shopping cart with complex logic
+const useCartStore = create((set, get) => ({
+  items: [],
+  
+  addItem: (product) => {
+    const existingItem = get().items.find(item => item.id === product.id);
+    
+    if (existingItem) {
+      set(state => ({
+        items: state.items.map(item =>
+          item.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        )
+      }));
+    } else {
+      set(state => ({ 
+        items: [...state.items, { ...product, quantity: 1 }] 
+      }));
+    }
+  },
+  
+  // Only add Zustand when you need features like:
+  // - Selective subscriptions
+  // - Complex computed values
+  // - Better DevTools support
+}));
+```
+
+</recommended>
+</example>
+
+<example>
+<situation>Context API optimization techniques</situation>
+<recommended>
+```typescript
+// Split contexts to minimize re-renders
+const UserContext = createContext<User | null>(null);
+const UserActionsContext = createContext<UserActions | null>(null);
+
+// Use multiple small contexts instead of one large one
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  
+  // Stable references for actions
+  const actions = useMemo(
+    () => ({
+      login: async (credentials: Credentials) => {
+        const user = await authService.login(credentials);
+        setUser(user);
+      },
+      logout: () => {
+        setUser(null);
+        authService.logout();
+      },
+    }),
+    []
+  );
+  
+  return (
+    <UserContext.Provider value={user}>
+      <UserActionsContext.Provider value={actions}>
+        {children}
+      </UserActionsContext.Provider>
+    </UserContext.Provider>
+  );
+};
+
+// Components can subscribe to only what they need
+const UserAvatar = () => {
+  const user = useContext(UserContext); // Only re-renders when user changes
+  return <img src={user?.avatar} alt={user?.name} />;
+};
+
+const LogoutButton = () => {
+  const { logout } = useContext(UserActionsContext); // Never re-renders
+  return <button onClick={logout}>Logout</button>;
+};
+```
+
+</recommended>
+</example>
+
+<example>
+<situation>When Context is sufficient vs when you need more</situation>
+<recommended>
+```typescript
+// ✅ Context is sufficient: Simple theme switcher
+const ThemeContext = createContext<{
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
+}>({
+  theme: 'light',
+  toggleTheme: () => {},
+});
+
+// ✅ Context is sufficient: Basic authentication
+const AuthContext = createContext<{
+  user: User | null;
+  login: (credentials: Credentials) => Promise<void>;
+  logout: () => void;
+} | null>(null);
+
+// ❌ Context becomes problematic: Real-time collaborative editor
+// Too many updates, need selective subscriptions
+const useEditorStore = create((set, get) => ({
+  content: '',
+  cursors: new Map(),
+  selections: new Map(),
+  
+  updateContent: (delta) => {
+    // Complex operational transform logic
+    set(state => ({ content: applyDelta(state.content, delta) }));
+  },
+  
+  updateCursor: (userId, position) => {
+    // Only components watching this user's cursor re-render
+    set(state => ({
+      cursors: new Map(state.cursors).set(userId, position)
+    }));
+  },
 }));
 
-// 3. Complex form state with reducer
-type FormAction =
-  | { type: 'SET_FIELD'; field: string; value: unknown }
-  | { type: 'SET_ERRORS'; errors: Record<string, string> }
-  | { type: 'RESET' }
-  | { type: 'SUBMIT_START' }
-  | { type: 'SUBMIT_SUCCESS' }
-  | { type: 'SUBMIT_ERROR'; error: string };
-
-function formReducer(state: FormState, action: FormAction): FormState {
-  switch (action.type) {
-    case 'SET_FIELD':
-      return {
-        ...state,
-        values: { ...state.values, [action.field]: action.value },
-        touched: { ...state.touched, [action.field]: true },
-      };
-    case 'SET_ERRORS':
-      return { ...state, errors: action.errors };
-    case 'SUBMIT_START':
-      return { ...state, isSubmitting: true, submitError: null };
-    case 'SUBMIT_SUCCESS':
-      return { ...state, isSubmitting: false, isSubmitted: true };
-    case 'SUBMIT_ERROR':
-      return { ...state, isSubmitting: false, submitError: action.error };
-    case 'RESET':
-      return initialFormState;
-    default:
-      return state;
-  }
-}
+// Components can subscribe to specific parts
+const UserCursor = ({ userId }) => {
+  const cursor = useEditorStore(state => state.cursors.get(userId));
+  return <Cursor position={cursor} />;
+};
 ```
 
 </recommended>

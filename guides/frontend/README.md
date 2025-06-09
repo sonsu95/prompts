@@ -29,10 +29,10 @@
 
 ### 3. **상태 관리 아키텍처**
 
-- 상태 관리 결정 매트릭스
-- 로컬 vs 글로벌 상태 전략
-- Context API 최적화
-- 현대적인 상태 라이브러리 (Zustand, React Query)
+- 점진적 상태 관리 접근법
+- Context API 우선 전략과 최적화
+- 서버 상태 관리 (React Query/SWR)
+- 복잡도 증가 시 마이그레이션 가이드
 
 ### 4. **성능 최적화**
 
@@ -79,6 +79,8 @@
 ## 설계 철학
 
 - **사람을 위한 코드 우선** - 가독성과 유지보수성을 위한 최적화
+- **단순함 우선** - 복잡한 도구는 실제 필요가 입증될 때만 도입
+- **점진적 복잡도** - 작게 시작하고 필요에 따라 확장
 - **사용자 여정 테스트** - 구현보다 동작에 집중
 - **포괄적으로 구축** - 접근성은 기본 요구사항
 - **최적화 전 측정** - 데이터를 기반으로 한 성능 개선
@@ -88,7 +90,7 @@
 
 - **프레임워크**: React 18+
 - **언어**: TypeScript
-- **상태 관리**: Zustand, React Query, Context API
+- **상태 관리**: Context API, React Query/SWR, Zustand (필요시)
 - **테스팅**: Jest, React Testing Library, Cypress
 - **스타일링**: CSS Modules, Styled Components, Tailwind
 - **빌드 도구**: Vite, Webpack, Next.js
